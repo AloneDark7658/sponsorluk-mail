@@ -1,0 +1,22 @@
+# Kişisel veriler (veritabanı, Gmail oturumu, log, imza logosu) - ASLA yüklenmez
+veriler/
+# Google istemci kimliği koda girmez; GitHub Secrets'tan sürüm paketine eklenir
+uygulama/google_istemci.json
+token.json
+*.db
+*.log
+
+# Kişisel Excel listeleri (uygulama boş şablonu kendisi üretir)
+*.xlsx
+*.csv
+
+# Python / derleme çıktıları
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.spec
+SponsorlukMail.exe
+uygulama.eski/

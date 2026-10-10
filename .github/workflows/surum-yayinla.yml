@@ -1,0 +1,50 @@
+# Yeni sürüm: 'v1.6.0' gibi bir etiket (tag) gönderilince çalışır.
+# 'uygulama' klasörünü SponsorlukMail-<sürüm>.zip olarak paketler ve GitHub Releases'a koyar.
+# Uygulamalar açılışta bu sürümü görüp kendini günceller; kurulum betiği de buradan indirir.
+name: Surum yayinla
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  yayinla:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Surum numarasi config.py ile ayni mi
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          grep -q "APP_VERSION = \"$VERSION\"" uygulama/config.py || {
+            echo "Etiket ($GITHUB_REF_NAME) ile uygulama/config.py icindeki APP_VERSION ayni degil."; exit 1; }
+
+      - name: Kod hatasiz mi
+        run: python3 -m compileall -q uygulama
+
+      - name: Google istemci kimligini pakete ekle
+        env:
+          GOOGLE_ISTEMCI_JSON: ${{ secrets.GOOGLE_ISTEMCI_JSON }}
+        run: |
+          if [ -z "$GOOGLE_ISTEMCI_JSON" ]; then
+            echo "GOOGLE_ISTEMCI_JSON gizli degiskeni tanimli degil (Settings > Secrets and variables > Actions)."; exit 1
+          fi
+          printf '%s' "$GOOGLE_ISTEMCI_JSON" > uygulama/google_istemci.json
+          python3 -c "import json; d = json.load(open('uygulama/google_istemci.json')); assert 'installed' in d"
+
+      - name: Paketi hazirla
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd uygulama
+          zip -r "../SponsorlukMail-$VERSION.zip" . -x "*__pycache__*" "*.pyc" "build.bat"
+
+      - name: Surumu yayinla
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" "SponsorlukMail-$VERSION.zip" \
+            --title "v$VERSION" --notes-from-tag
