@@ -7,7 +7,7 @@ Kulübün sponsorluk maillerini kendi Gmail hesabınızdan, firmaya özel doldur
 - **Sabit CC listesi** her maile otomatik eklenir (ör. YK Google Grubu)
 - Birden fazla ek (PDF, Word, Excel, görsel...), şablon kaydetme, canlı önizleme, kendine test maili
 - Ayarlardan düzenlenen **imza** (isteğe bağlı logo ile) her maile otomatik eklenir
-- **Gönderim saatleri:** mailler yalnızca belirlenen saatlerde (varsayılan 09:30 ve 13:30) gider
+- **Gönderim saatleri:** ilk mailler yalnızca belirlenen saatlerde (varsayılan 09:30 ve 13:30), hatırlatmalar kendi saatlerinde (varsayılan 09:00 ve 13:30) gider
 - **Google sunucusuyla planlama:** ilk mailler ve hatırlatmalar, bilgisayar kapalıyken de Google'ın sunucusundan gider (günde 100 alıcıya kadar)
 - Kimin gönderildiği / hata aldığı kaydedilir; uygulama kapansa bile **kaldığı yerden devam eder**
 - Günlük limit (CC dahil) ve mailler arası bekleme ile Gmail'e takılmadan gönderir
@@ -75,7 +75,7 @@ Herkes kendi Gmail hesabıyla giriş yapar ve kendi hesabından gönderir. Kimse
 
 **3) Gönderim**
 - Önce **Kendime test maili gönder**. Önizlemedeki firmanın bilgileriyle doldurulmuş mail sadece size gider (CC'ye gitmez).
-- **Gönderim saatleri:** Ayarlardaki "Gönderim saatleri" (varsayılan `09:30, 13:30`) ve "Sadece bu saatlerde gönder" açıkken buton **GÖNDERİMİ PLANLA** olur. Basınca mailler hemen gitmez; sıradaki saat gelince kendiliğinden başlar. Üstte "⏰ Planlı gönderim: Yarın 09:00" gibi görünür. **O saatte uygulama açık olmalı.** Plan varken bilgisayar uykuya geçmez, ama dizüstünün kapağını kapatırsanız uyur.
+- **Gönderim saatleri:** Ayarlardaki "Gönderim saatleri" (varsayılan `09:30, 13:30`) ve "Sadece bu saatlerde gönder" açıkken buton **GÖNDERİMİ PLANLA** olur. Basınca mailler hemen gitmez; sıradaki saat gelince kendiliğinden başlar. Üstte "⏰ Planlı gönderim: Yarın 09:00" gibi görünür. Hatırlatmaların saatleri ayrıdır: **Cevaplar ve Hatırlatma** sekmesindeki "Hatırlatma saatleri" (varsayılan `09:00, 13:30`). İki gönderim aynı anda denk gelirse biri bitince diğeri başlar. **O saatte uygulama açık olmalı.** Plan varken bilgisayar uykuya geçmez, ama dizüstünün kapağını kapatırsanız uyur.
   - Saat geçtikten sonraki 15 dakika içinde uygulamayı açarsanız gönderim yine başlar. Daha geç açarsanız sıradaki saati bekler.
   - "Hafta sonu gönderme" açıksa Cumartesi ve Pazar atlanır.
   - "Bir seferde en fazla firma" ile her saatte kaç firmaya gideceğini sınırlayabilirsiniz (ör. 50: sabah 50, öğlen 50). Kalanlar sonraki saatlerde otomatik devam eder.

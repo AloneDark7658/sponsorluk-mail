@@ -13,7 +13,7 @@ import server_plan
 import updater
 from database import SERVER
 from replies import check_replies
-from schedule import START_WINDOW, describe, keep_awake, latest_slot, next_slot, slot_key
+from schedule import BUSY_WINDOW, START_WINDOW, describe, keep_awake, latest_slot, next_slot, slot_key
 from ui.contacts_tab import ContactsTab
 from ui.followup_tab import FollowupTab
 from ui.send_tab import SendTab
@@ -299,9 +299,11 @@ class App(ctk.CTk):
         parts = []
         if self._new_replies:
             parts.append(f"✉ {self._new_replies} yeni cevap")
-        planned = [k for k in SCHEDULE_KINDS if self.is_scheduled(k)] if self._schedule_config() else []
+        planned = [k for k in SCHEDULE_KINDS if self.is_scheduled(k) and self._schedule_config(k)]
         if planned:
-            parts.append(f"⏰ Planlı gönderim: {self.upcoming_slot_text(planned[0])}")
+            first = min(planned, key=lambda k: self.upcoming_slot(k) or datetime.max)
+            what = "hatırlatma" if first == "reminder" else "gönderim"
+            parts.append(f"⏰ Planlı {what}: {self.upcoming_slot_text(first)}")
         on_server = self.db.counts()[SERVER]
         if on_server:
             parts.append(f"☁ Google'da planlı: {on_server} firma")
@@ -319,16 +321,19 @@ class App(ctk.CTk):
         self.db.set_setting(f"scheduled_{kind}", "1" if value else "0")
         self.refresh_schedule()
 
-    def _schedule_config(self):
-        """Saat kısıtı açıksa (saatler, hafta sonu atlansın mı); kapalı ya da hatalıysa None."""
+    def _schedule_config(self, kind="campaign"):
+        """Saat kısıtı açıksa (saatler, hafta sonu atlansın mı); kapalı ya da hatalıysa None.
+        İlk mailler 'Gönderim saatleri'ni, hatırlatmalar kendi 'Hatırlatma saatleri'ni kullanır."""
         try:
             enabled, times, skip_weekends = self.send_tab.schedule_settings()
+            if kind == "reminder":
+                times = self.followup_tab.reminder_times()
         except ValueError:
             return None
         return (times, skip_weekends) if enabled else None
 
     def upcoming_slot(self, kind):
-        config = self._schedule_config()
+        config = self._schedule_config(kind)
         if not config:
             return None
         now = datetime.now()
@@ -346,7 +351,7 @@ class App(ctk.CTk):
         return describe(slot)
 
     def refresh_schedule(self):
-        planned = bool(self._schedule_config()) and any(self.is_scheduled(k) for k in SCHEDULE_KINDS)
+        planned = any(self.is_scheduled(k) and self._schedule_config(k) for k in SCHEDULE_KINDS)
         keep_awake(planned or self.busy)
         self.send_tab.refresh_schedule()
         self.followup_tab.refresh_schedule()
@@ -361,22 +366,26 @@ class App(ctk.CTk):
         self.after(SCHEDULE_TICK_MS, self._schedule_tick)
 
     def _run_due_schedule(self):
-        config = self._schedule_config()
-        if not config or self.busy:
-            return
         now = datetime.now()
-        slot = latest_slot(now, *config)
-        if not slot:
+        due = []
+        for kind in SCHEDULE_KINDS:  # ilk mailler ve hatırlatmalar ayrı saatlerde olabilir
+            config = self._schedule_config(kind)
+            if not config or not self.is_scheduled(kind):
+                continue
+            slot = latest_slot(now, *config)
+            if not slot:
+                continue
+            key = slot_key(slot)
+            if self.db.get_setting(f"last_slot_{kind}") == key:
+                continue
+            if now - slot <= START_WINDOW:
+                # Saat geldi. Başka gönderim sürüyorsa sıraya alınır, o bitince başlar.
+                self.db.set_setting(f"waiting_slot_{kind}", key)
+            if self.db.get_setting(f"waiting_slot_{kind}") == key and now - slot <= BUSY_WINDOW:
+                due.append((kind, key))
+        if self.busy:
             return
-        key = slot_key(slot)
-        for kind in SCHEDULE_KINDS:
-            if not self.is_scheduled(kind) or self.db.get_setting(f"last_slot_{kind}") == key:
-                continue
-            fresh = now - slot <= START_WINDOW
-            # İlk mailler bu saatte gönderildiyse hatırlatmalar hemen ardından gider (süre sınırı yok).
-            chained = kind == "reminder" and self.db.get_setting("last_slot_campaign") == key
-            if not (fresh or chained):
-                continue
+        for kind, key in due:
             self.db.set_setting(f"last_slot_{kind}", key)
             log.info("Planlı gönderim saati geldi: %s (%s)", key, kind)
             tab = self.send_tab if kind == "campaign" else self.followup_tab

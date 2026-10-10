@@ -86,7 +86,7 @@ class SendTab(ctk.CTkFrame):
         self.sender_entry = self._setting_row(settings, 4, "Gönderen adı (isteğe bağlı)",
                                               self.db.get_setting("sender_name", ""),
                                               placeholder="Örn: ABC Üniversitesi Yatırım Kulübü")
-        self.times_entry = self._setting_row(settings, 5, "Gönderim saatleri",
+        self.times_entry = self._setting_row(settings, 5, "Gönderim saatleri (ilk mailler)",
                                              self.db.get_setting("send_times", DEFAULT_TIMES), placeholder="09:00, 13:30")
 
         options = ctk.CTkFrame(settings, fg_color="transparent")

@@ -9,7 +9,7 @@ import customtkinter as ctk
 import quota
 import server_plan
 from database import TIME_FORMAT, display_time
-from schedule import describe
+from schedule import DEFAULT_REMINDER_TIMES, describe, format_times, parse_times
 from mail_format import load_signature, preview_body, signature_problems
 from replies import due_for_reminder, reply_counts
 from sender import ReminderJob, ReminderWorker, reply_subject
@@ -90,13 +90,16 @@ class FollowupTab(ctk.CTkFrame):
                                             self.db.get_setting("reminder_days", DEFAULT_DAYS))
         self.max_entry = self._setting_row(settings, 2, "Firma başına en fazla hatırlatma",
                                            self.db.get_setting("reminder_max", DEFAULT_MAX))
+        self.times_entry = self._setting_row(settings, 3, "Hatırlatma saatleri",
+                                             self.db.get_setting("reminder_times", DEFAULT_REMINDER_TIMES), width=140)
         ctk.CTkLabel(
             settings,
             text="Hatırlatma, ilk mailin cevabı olarak aynı konuşmada ('Re: ...' konusuyla) gider ve sabit CC "
-                 "listesi eklenir. Bekleme süresi ve günlük limit 'Gönderim' sekmesindeki ayarlardır. "
+                 "listesi eklenir. Hatırlatmalar yukarıdaki saatlerde gider (ilk maillerin saatlerinden ayrı). "
+                 "Bekleme süresi, günlük limit ve hafta sonu ayarı 'Gönderim' sekmesindekilerdir. "
                  "Göndermeden hemen önce her firmanın cevabı tekrar kontrol edilir.",
             text_color="gray40", wraplength=520, justify="left",
-        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=14, pady=(4, 12))
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=14, pady=(4, 12))
 
         # --- Hatırlatma metni ve önizleme ---
         editor = ctk.CTkFrame(self)
@@ -163,9 +166,9 @@ class FollowupTab(ctk.CTkFrame):
         self.log_box.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 0))
         self.log_box.configure(state="disabled")
 
-    def _setting_row(self, parent, row, label, value):
+    def _setting_row(self, parent, row, label, value, width=90):
         ctk.CTkLabel(parent, text=label).grid(row=row, column=0, sticky="w", padx=14, pady=4)
-        entry = ctk.CTkEntry(parent, width=90)
+        entry = ctk.CTkEntry(parent, width=width)
         entry.grid(row=row, column=1, sticky="w", padx=(6, 14), pady=4)
         entry.insert(0, str(value))
         entry.bind("<KeyRelease>", lambda e: self._schedule_save())
@@ -182,6 +185,10 @@ class FollowupTab(ctk.CTkFrame):
         if days < 1 or max_reminders < 1:
             raise ValueError("Gün sayısı ve hatırlatma sayısı en az 1 olmalı.")
         return days, max_reminders
+
+    def reminder_times(self):
+        """Hatırlatma saatleri (ilk maillerin saatlerinden ayrı). Hatalıysa ValueError."""
+        return parse_times(self.times_entry.get())
 
     def _body(self):
         return self.body_text.get("1.0", "end-1c").rstrip()
@@ -201,6 +208,11 @@ class FollowupTab(ctk.CTkFrame):
         else:
             self.db.set_setting("reminder_days", days)
             self.db.set_setting("reminder_max", max_reminders)
+        try:
+            self.db.set_setting("reminder_times", format_times(self.reminder_times()))
+        except ValueError:
+            pass
+        self.app.refresh_schedule()
         self.refresh()
         self.app.update_notice()
 
@@ -475,6 +487,7 @@ class FollowupTab(ctk.CTkFrame):
             return False
         try:
             self._read_settings()
+            self.reminder_times()
             delay, limit = self.app.send_tab._read_settings()
         except ValueError as exc:
             self._report("Ayar hatası", str(exc), interactive, "error")

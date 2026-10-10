@@ -12,6 +12,9 @@ from datetime import datetime, time, timedelta
 log = logging.getLogger(__name__)
 
 DEFAULT_TIMES = "09:30, 13:30"
+DEFAULT_REMINDER_TIMES = "09:00, 13:30"  # hatırlatmaların kendi saatleri
+# Saat geldiğinde başka bir gönderim sürüyorsa, o bitince bu süre içinde yine başlar.
+BUSY_WINDOW = timedelta(hours=3)
 # Saat geçtikten sonra bu süre içinde uygulama açılırsa gönderim yine başlar; daha geçse sonraki saat beklenir.
 START_WINDOW = timedelta(minutes=15)
 DAY_NAMES = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
