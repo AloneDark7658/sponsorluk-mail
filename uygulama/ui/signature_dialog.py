@@ -56,8 +56,13 @@ class SignatureDialog(ctk.CTkToplevel):
         self.mode.set(next(label for label, value in MODES.items() if value == current))
         self.mode.pack(side="right")
 
+        # Kartvizit formu ve düz metin aynı yerde, biri gösterilir. İkisi de bu çerçevenin çocuğu olmalı;
+        # yoksa sonradan oluşturulan çerçeve onları örtüp görünmez yapar.
+        self.body_slot = ctk.CTkFrame(self, fg_color="transparent")
+        self.body_slot.pack(fill="x", padx=20)
+
         # --- Kartvizit formu ---
-        self.card_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.card_frame = ctk.CTkFrame(self.body_slot, fg_color="transparent")
         self.card_frame.grid_columnconfigure((1, 3), weight=1)
         card = load_card(self.db)
         self.card_entries = {}
@@ -72,15 +77,12 @@ class SignatureDialog(ctk.CTkToplevel):
             self._card_row(key, label, card[key], row=i + 1, column=2)
 
         # --- Düz metin ---
-        self.text_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.text_frame = ctk.CTkFrame(self.body_slot, fg_color="transparent")
         self.text = ctk.CTkTextbox(self.text_frame, width=360, height=150, wrap="word", font=ctk.CTkFont(size=14))
         self.text.pack(side="left")
         self.text.insert("1.0", self.db.get_setting("signature_text") or "")
         ctk.CTkLabel(self.text_frame, text=TEXT_EXAMPLE, text_color="gray45", justify="left", anchor="nw").pack(
             side="left", anchor="n", padx=(12, 0))
-
-        self.body_slot = ctk.CTkFrame(self, fg_color="transparent")
-        self.body_slot.pack(fill="x", padx=20)
 
         # --- Logo ---
         logo_bar = ctk.CTkFrame(self, fg_color="transparent")
@@ -131,7 +133,7 @@ class SignatureDialog(ctk.CTkToplevel):
         self.card_frame.pack_forget()
         self.text_frame.pack_forget()
         frame = self.card_frame if self._mode() == SIGNATURE_CARD else self.text_frame
-        frame.pack(in_=self.body_slot, fill="x")
+        frame.pack(fill="x")
 
     def _update_logo_label(self):
         if not self.logo:
