@@ -1,4 +1,5 @@
 """Cevaplar ve Hatırlatma sekmesi: cevap takibi özeti ve cevap vermeyenlere hatırlatma gönderimi."""
+import json
 import logging
 from datetime import datetime
 from tkinter import messagebox
@@ -43,6 +44,13 @@ class FollowupTab(ctk.CTkFrame):
         self.worker = None
         self._save_job = None
         self._scheduled_run = False
+        # Hatırlatma listesinde işareti kaldırılan firmalar (kalıcı); yeni zamanı gelenler seçili gelir.
+        try:
+            self._excluded = set(json.loads(self.db.get_setting("reminder_excluded") or "[]"))
+        except ValueError:
+            self._excluded = set()
+        self._preview_id = None
+        self._due_signature = None
 
         self.grid_columnconfigure((0, 1), weight=1, uniform="col")
         self.grid_rowconfigure(1, weight=1)
@@ -101,8 +109,23 @@ class FollowupTab(ctk.CTkFrame):
         self.body_text.bind("<KeyRelease>", lambda e: self._schedule_save())
         attach_variable_menu(self.body_text, self.app.template_tab.variables, self._schedule_save)
 
-        preview = ctk.CTkFrame(self)
-        preview.grid(row=1, column=1, sticky="nsew", padx=(6, 0))
+        side = ctk.CTkFrame(self, fg_color="transparent")
+        side.grid(row=1, column=1, sticky="nsew", padx=(6, 0))
+        # Hatırlatma zamanı gelen firmalar: son mailden geçen güne göre gruplu, seçilebilir
+        due_box = ctk.CTkFrame(side)
+        due_box.pack(fill="both", expand=True, pady=(0, 6))
+        head = ctk.CTkFrame(due_box, fg_color="transparent")
+        head.pack(fill="x", padx=12, pady=(8, 2))
+        ctk.CTkLabel(head, text="Hatırlatma zamanı gelen firmalar", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        ctk.CTkButton(head, text="Hiçbiri", width=64, height=24, command=lambda: self._select_all(False),
+                      fg_color="#5f6b7a", hover_color="#4a5462").pack(side="right")
+        ctk.CTkButton(head, text="Tümü", width=64, height=24, command=lambda: self._select_all(True)).pack(
+            side="right", padx=6)
+        self.due_list = ctk.CTkScrollableFrame(due_box, fg_color="transparent", height=160)
+        self.due_list.pack(fill="both", expand=True, padx=6, pady=(0, 8))
+
+        preview = ctk.CTkFrame(side)
+        preview.pack(fill="both", expand=True)
         self.preview_title = ctk.CTkLabel(preview, text="Önizleme", font=ctk.CTkFont(weight="bold"),
                                           anchor="w", justify="left", wraplength=520)
         self.preview_title.pack(fill="x", padx=12, pady=(10, 4))
@@ -196,6 +219,77 @@ class FollowupTab(ctk.CTkFrame):
             return []
         return due_for_reminder(self.db.list_contacts(), days, max_reminders)
 
+    # ---------- Hatırlatma listesi (seçim) ----------
+
+    def selected_due(self, due=None):
+        due = self.due_contacts() if due is None else due
+        return [c for c in due if c["id"] not in self._excluded]
+
+    @staticmethod
+    def _days_waiting(contact):
+        """Son mailden (ilk mail ya da son hatırlatma) bu yana geçen gün."""
+        last = contact.get("last_reminder_at") or contact.get("sent_at")
+        try:
+            return (datetime.now() - datetime.strptime(last, TIME_FORMAT)).days
+        except (TypeError, ValueError):
+            return 0
+
+    def _set_selected(self, contact_ids, selected):
+        for cid in contact_ids:
+            if selected:
+                self._excluded.discard(cid)
+            else:
+                self._excluded.add(cid)
+        self.db.set_setting("reminder_excluded", json.dumps(sorted(self._excluded)))
+        self.refresh()
+        self.app.update_notice()
+
+    def _select_all(self, selected):
+        self._set_selected([c["id"] for c in self.due_contacts()], selected)
+
+    def _show_preview(self, contact_id):
+        self._preview_id = contact_id
+        self.refresh()
+
+    def _render_due_list(self, due):
+        signature = tuple((c["id"], self._days_waiting(c), c["id"] in self._excluded, c.get("reminder_count") or 0,
+                           c["id"] == self._preview_id) for c in due)
+        if signature == self._due_signature:
+            return
+        self._due_signature = signature
+        for child in self.due_list.winfo_children():
+            child.destroy()
+        if not due:
+            ctk.CTkLabel(self.due_list, text="Şu an hatırlatma zamanı gelen firma yok.", text_color="gray45").pack(
+                anchor="w", padx=6, pady=6)
+            return
+        groups = {}
+        for c in sorted(due, key=lambda c: (-self._days_waiting(c), c["firma"].casefold())):
+            groups.setdefault(self._days_waiting(c), []).append(c)
+        for days, items in groups.items():
+            ids = [c["id"] for c in items]
+            header = ctk.CTkCheckBox(
+                self.due_list, text=f"Son mailden {days} gün geçenler ({len(items)})",
+                font=ctk.CTkFont(weight="bold"), checkbox_width=18, checkbox_height=18,
+                command=lambda ids=ids: self._set_selected(ids, any(i in self._excluded for i in ids)))
+            if not any(i in self._excluded for i in ids):
+                header.select()
+            header.pack(anchor="w", padx=4, pady=(8, 2))
+            for c in items:
+                row = ctk.CTkFrame(self.due_list, fg_color=("#e3e9f1", "gray25") if c["id"] == self._preview_id
+                                   else "transparent", corner_radius=6)
+                row.pack(fill="x", padx=(22, 4), pady=1)
+                box = ctk.CTkCheckBox(row, text="", width=24, checkbox_width=16, checkbox_height=16,
+                                      command=lambda c=c: self._set_selected([c["id"]], c["id"] in self._excluded))
+                if c["id"] not in self._excluded:
+                    box.select()
+                box.pack(side="left", padx=(4, 0))
+                count = c.get("reminder_count") or 0
+                text = f"{c['firma']}   <{c['email']}>" + (f"   •   {count + 1}. hatırlatma" if count else "")
+                name = ctk.CTkLabel(row, text=text, anchor="w", cursor="hand2")
+                name.pack(side="left", fill="x", expand=True, padx=4)
+                name.bind("<Button-1>", lambda e, cid=c["id"]: self._show_preview(cid))
+
     def refresh(self):
         contacts = self.db.list_contacts()
         c = reply_counts(contacts)
@@ -210,7 +304,10 @@ class FollowupTab(ctk.CTkFrame):
         last = self.db.get_setting("last_reply_check")
         self.last_check_label.configure(text=f"Son kontrol: {display_time(last)}" if last else "Henüz kontrol edilmedi")
 
-        due = self.due_contacts()
+        all_due = self.due_contacts()
+        self._render_due_list(all_due)
+        due = self.selected_due(all_due)
+        chosen = f" ({len(due)} / {len(all_due)} seçili)" if len(due) != len(all_due) else ""
         planned = self.db.reminder_planned_contacts()
         if self.is_sending():
             pass
@@ -229,12 +326,15 @@ class FollowupTab(ctk.CTkFrame):
             self.due_label.configure(
                 text=f"⏰ Hatırlatma planlandı: {self.app.upcoming_slot_text('reminder')} ({len(due)} firma)",
                 text_color=ORANGE)
-        elif due:
-            self.due_label.configure(text=f"Hatırlatma zamanı gelen: {len(due)} firma", text_color="#b05a00")
+        elif all_due:
+            self.due_label.configure(text=f"Hatırlatma zamanı gelen: {len(all_due)} firma{chosen}",
+                                     text_color="#b05a00")
         else:
             self.due_label.configure(text="Şu an hatırlatma zamanı gelen firma yok.", text_color="gray35")
         self._update_buttons(len(due))
-        self._update_preview(due[0] if due else next((x for x in contacts if x.get("thread_id")), None))
+        previewed = next((x for x in all_due if x["id"] == self._preview_id), None)
+        self._update_preview(previewed or (due[0] if due else (all_due[0] if all_due else
+                             next((x for x in contacts if x.get("thread_id")), None))))
 
     def _update_preview(self, contact):
         if contact:
@@ -271,7 +371,7 @@ class FollowupTab(ctk.CTkFrame):
 
     def _update_buttons(self, due_count=None):
         if due_count is None:
-            due_count = len(self.due_contacts())
+            due_count = len(self.selected_due())
         sending = self.is_sending()
         if self.app.is_scheduled("reminder") and not sending:
             self.send_button.configure(state="normal", text="Hatırlatma planını iptal et",
@@ -318,7 +418,8 @@ class FollowupTab(ctk.CTkFrame):
             messagebox.showerror("İmza sorunu", "\n".join(problems))
             return
         self.save_settings()
-        ServerPlanDialog(self, self.app, cc, signature, kind="reminder", reminder_body=body)
+        ServerPlanDialog(self, self.app, cc, signature, kind="reminder", reminder_body=body,
+                         excluded_ids=set(self._excluded))
 
     def cancel_server_plan(self):
         count = len(self.db.reminder_planned_contacts())
@@ -388,7 +489,7 @@ class FollowupTab(ctk.CTkFrame):
         if problems:
             self._report("İmza sorunu", "\n".join(problems), interactive, "error")
             return False
-        due = self.due_contacts()
+        due = self.selected_due()
         if not due:
             if scheduled:
                 self.app.set_scheduled("reminder", False)

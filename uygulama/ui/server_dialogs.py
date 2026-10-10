@@ -130,13 +130,15 @@ class ServerPlanDialog(ctk.CTkToplevel):
     Gmail genel günlük limiti (gönderilenler + Google'da planlı olanlar) aşılmaz.
     """
 
-    def __init__(self, master, app, cc, signature, kind="campaign", mail=None, reminder_body=None):
+    def __init__(self, master, app, cc, signature, kind="campaign", mail=None, reminder_body=None,
+                 excluded_ids=None):
         super().__init__(master)
         self.app = app
         self.db = app.db
         self.kind = kind
         self.mail, self.cc, self.signature = mail, cc, signature
         self.reminder_body = reminder_body
+        self.excluded_ids = excluded_ids or set()  # hatırlatma listesinde işareti kaldırılan firmalar
         _, self.times, self.skip_weekends = app.send_tab.schedule_settings()
         _, self.daily_limit = app.send_tab._read_settings()
         self.per_mail = 1 + len(cc)
@@ -198,7 +200,8 @@ class ServerPlanDialog(ctk.CTkToplevel):
         if self.kind == "reminder":
             # O saat geldiğinde hatırlatma zamanı gelmiş olacak firmalar (akşamdan sabaha planlanabilsin)
             days, max_reminders = self.app.followup_tab._read_settings()
-            return due_for_reminder(self.db.list_contacts(), days, max_reminders, now=slot)
+            due = due_for_reminder(self.db.list_contacts(), days, max_reminders, now=slot)
+            return [c for c in due if c["id"] not in self.excluded_ids]
         return self.db.pending_contacts()
 
     def _plan_items(self):
