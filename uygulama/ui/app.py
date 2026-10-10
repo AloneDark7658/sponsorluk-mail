@@ -259,6 +259,12 @@ class App(ctk.CTk):
             if synced["sent"]:
                 self.send_tab.log(f"Google sunucusu gönderdi: {len(synced['sent'])} firma ("
                                   + ", ".join(synced["sent"][:10]) + ("..." if len(synced["sent"]) > 10 else "") + ").")
+            if synced.get("reminders_sent"):
+                self.followup_tab.log(f"Google sunucusu hatırlatma gönderdi: {len(synced['reminders_sent'])} firma ("
+                                      + ", ".join(synced["reminders_sent"][:10]) + ").")
+            if synced.get("reminders_dropped"):
+                self.followup_tab.log("Cevap geldiği için hatırlatması gönderilmeyen: "
+                                      + ", ".join(synced["reminders_dropped"][:10]) + ".")
             if synced["missing"]:
                 self.send_tab.log("Google taslağı bulunamayan firmalar 'Hata' yapıldı: " + ", ".join(synced["missing"]))
             if synced["test_ok"]:

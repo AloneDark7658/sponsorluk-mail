@@ -111,7 +111,7 @@ def due_for_reminder(contacts, days, max_reminders, now=None):
     now = now or datetime.now()
     due = []
     for c in contacts:
-        if not awaiting_reply(c) or not c.get("thread_id"):
+        if not awaiting_reply(c) or not c.get("thread_id") or c.get("reminder_draft_id"):
             continue
         if (c.get("reminder_count") or 0) >= max_reminders:
             continue

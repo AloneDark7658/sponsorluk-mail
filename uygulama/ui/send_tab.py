@@ -9,6 +9,7 @@ import customtkinter as ctk
 from config import DEFAULT_DAILY_LIMIT, DEFAULT_DELAY_SECONDS
 from collections import Counter
 
+import quota
 import server_plan
 from database import ERROR, PENDING, SENT, SERVER, TIME_FORMAT
 from mail_format import attachment_problems, load_signature, signature_problems
@@ -259,20 +260,24 @@ class SendTab(ctk.CTkFrame):
     def refresh_summary(self):
         self.refresh_mail_info()
         counts = self.db.counts()
-        used = self.db.recipients_last_24h()
         try:
             _, limit = self._read_settings()
         except ValueError:
             limit = int(self.db.get_setting("daily_limit", DEFAULT_DAILY_LIMIT))
+        used, reserved = quota.gmail_used(self.db)
+        room = max(0, limit - used - reserved)
+        today = datetime.now().date()
         cc_valid, _ = self.app.template_tab.get_cc()
         per_mail = 1 + len(cc_valid)
-        can_send = min(counts[PENDING], max(0, limit - used) // per_mail)
+        can_send = min(counts[PENDING], room // per_mail)
         self.summary_label.configure(text=(
             f"Bekleyen firma:  {counts[PENDING]}      Google'da planlı:  {counts[SERVER]}\n"
             f"Gönderilmiş:  {counts[SENT]}      Hatalı:  {counts[ERROR]}\n"
-            f"Son 24 saatte gönderilen alıcı:  {used} / {limit}\n"
-            f"Her mail 1 firma + {len(cc_valid)} CC = {per_mail} alıcı sayılır\n"
-            f"Şu an gönderilebilecek firma sayısı:  {can_send}"
+            f"Gmail günlük limiti:  {used} gönderildi + {reserved} Google'da planlı = {used + reserved} / {limit}"
+            f"  (kalan {room})\n"
+            f"Google sunucusu bugün:  {quota.server_used_on(self.db, today)} / {quota.SERVER_DAILY_RECIPIENTS} alıcı "
+            f"(ilk mail + hatırlatma)\n"
+            f"Her mail 1 firma + {len(cc_valid)} CC = {per_mail} alıcı sayılır   •   Şu an gönderilebilecek: {can_send} firma"
         ))
 
     def refresh_schedule(self):
@@ -309,7 +314,10 @@ class SendTab(ctk.CTkFrame):
                     parts.append(f"{n} firma")
             lines.append("☁ Google'da planlı: " + ", ".join(parts) + ". Bilgisayarı kapatabilirsiniz.")
         verified = self.db.get_setting("server_verified")
-        if verified:
+        if server_plan.script_needs_update(self.db):
+            lines.append("⚠ Google'daki kod güncellenmeli (hatırlatmalar için): 'Kurulum' → 'Kodu kopyala' → "
+                         "script.google.com'da eski kodun yerine yapıştırıp kaydedin.")
+        elif verified:
             lines.append("Kurulum: çalışıyor ✓")
         elif self.db.get_setting("server_test_thread"):
             lines.append("Kurulum: test maili bekleniyor...")
@@ -331,7 +339,7 @@ class SendTab(ctk.CTkFrame):
         if not self.db.pending_contacts():
             messagebox.showinfo("Gönderilecek firma yok", "Durumu 'Bekliyor' olan firma yok.")
             return
-        ServerPlanDialog(self, self.app, mail, cc, signature)
+        ServerPlanDialog(self, self.app, cc, signature, kind="campaign", mail=mail)
 
     def cancel_server_plan(self):
         count = len(self.db.server_planned_contacts())
@@ -485,11 +493,11 @@ class SendTab(ctk.CTkFrame):
         delay, limit = self._read_settings()
         batch_max = self._read_batch_max()
         per_mail = 1 + len(cc)
-        used = self.db.recipients_last_24h()
-        can_send = max(0, limit - used) // per_mail
+        used, reserved = quota.gmail_used(self.db)
+        can_send = max(0, limit - used - reserved) // per_mail
         if can_send == 0 and not (interactive and self.schedule_check.get() == 1):
             self._report("Günlük limit dolu",
-                         f"Son 24 saatte {used} alıcıya gönderildi, limit {limit}. "
+                         f"Son 24 saatte {used} alıcıya gönderildi, {reserved} alıcı Google'da planlı; limit {limit}. "
                          f"Bir mail {per_mail} alıcı sayıldığı için şu an gönderim yapılamaz.", interactive)
             return False
 

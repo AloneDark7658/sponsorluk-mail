@@ -5,11 +5,15 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from database import display_time
+import quota
+import server_plan
+from database import TIME_FORMAT, display_time
+from schedule import describe
 from mail_format import load_signature, preview_body, signature_problems
 from replies import due_for_reminder, reply_counts
 from sender import ReminderJob, ReminderWorker, reply_subject
 from template_engine import contact_fields, render
+from ui.server_dialogs import ServerPlanDialog
 from ui.variables import attach_variable_menu
 
 log = logging.getLogger(__name__)
@@ -119,6 +123,15 @@ class FollowupTab(ctk.CTkFrame):
                                          command=self._on_send_button, fg_color=GREEN, hover_color=GREEN_HOVER,
                                          font=ctk.CTkFont(size=14, weight="bold"))
         self.send_button.pack(side="right", padx=10)
+        # Google sunucusu: bilgisayar kapalıyken hatırlatma
+        self.server_cancel_button = ctk.CTkButton(actions, text="Google planını iptal et", width=160, height=40,
+                                                  command=self.cancel_server_plan, fg_color=ORANGE,
+                                                  hover_color=ORANGE_HOVER)
+        self.server_cancel_button.pack(side="right")
+        self.server_button = ctk.CTkButton(actions, text="Google'da planla", width=150, height=40,
+                                           command=self.open_server_plan, fg_color="#7b3fb5", hover_color="#5f2f8c",
+                                           font=ctk.CTkFont(size=14, weight="bold"))
+        self.server_button.pack(side="right", padx=10)
 
         self.progress = ctk.CTkProgressBar(self, height=14, progress_color=GREEN)
         self.progress.set(0)
@@ -198,8 +211,20 @@ class FollowupTab(ctk.CTkFrame):
         self.last_check_label.configure(text=f"Son kontrol: {display_time(last)}" if last else "Henüz kontrol edilmedi")
 
         due = self.due_contacts()
+        planned = self.db.reminder_planned_contacts()
         if self.is_sending():
             pass
+        elif planned:
+            times = sorted({c["reminder_scheduled_for"] for c in planned if c.get("reminder_scheduled_for")})
+            when = ""
+            if times:
+                try:
+                    when = " — " + describe(datetime.strptime(times[0], TIME_FORMAT))
+                except ValueError:
+                    pass
+            extra = f"   •   zamanı gelen {len(due)} firma daha" if due else ""
+            self.due_label.configure(text=f"☁ Google'da planlı hatırlatma: {len(planned)} firma{when}{extra}",
+                                     text_color="#7b3fb5")
         elif self.app.is_scheduled("reminder"):
             self.due_label.configure(
                 text=f"⏰ Hatırlatma planlandı: {self.app.upcoming_slot_text('reminder')} ({len(due)} firma)",
@@ -260,6 +285,66 @@ class FollowupTab(ctk.CTkFrame):
             )
         self.stop_button.configure(state="normal" if sending else "disabled", text="Durdur",
                                    fg_color=RED if sending else "gray70")
+        has_plan = bool(self.db.reminder_planned_contacts())
+        self.server_button.configure(state="disabled" if self.app.busy else "normal")
+        self.server_cancel_button.configure(state="normal" if has_plan and not self.app.busy else "disabled")
+
+    # ---------- Google sunucusuyla hatırlatma ----------
+
+    def open_server_plan(self):
+        if self.app.busy:
+            return
+        if not self.app.gmail.connected:
+            messagebox.showwarning("Gmail bağlı değil", "Önce sağ üstteki 'Gmail ile bağlan' butonuyla bağlanın.")
+            return
+        body = self._body()
+        try:
+            self._read_settings()
+            self.app.send_tab._read_settings()
+            self.app.send_tab.schedule_settings()
+        except ValueError as exc:
+            messagebox.showerror("Ayar hatası", str(exc))
+            return
+        if not body:
+            messagebox.showwarning("Metin boş", "Hatırlatma metnini yazın.")
+            return
+        cc, cc_invalid = self.app.template_tab.get_cc()
+        if cc_invalid:
+            messagebox.showerror("Geçersiz CC", "Şu CC adresleri geçersiz ('Mail Metni' sekmesi):\n" + "\n".join(cc_invalid))
+            return
+        signature = load_signature(self.db)
+        problems = signature_problems(signature)
+        if problems:
+            messagebox.showerror("İmza sorunu", "\n".join(problems))
+            return
+        self.save_settings()
+        ServerPlanDialog(self, self.app, cc, signature, kind="reminder", reminder_body=body)
+
+    def cancel_server_plan(self):
+        count = len(self.db.reminder_planned_contacts())
+        if not count or not messagebox.askyesno(
+            "Google planını iptal et",
+            f"Google'da planlı {count} hatırlatma taslağı Gmail'den silinecek. Devam edilsin mi?"):
+            return
+        self.app.set_busy(True)
+
+        def done(result):
+            cancelled, already_sent = result
+            self.app.set_busy(False)
+            self.app.contacts_changed()
+            text = f"{cancelled} hatırlatmanın Google planı iptal edildi."
+            if already_sent:
+                text += f" {already_sent} hatırlatma bu arada zaten gönderilmişti."
+            self.log(text)
+            messagebox.showinfo("Google planı iptal edildi", text)
+
+        def failed(message):
+            self.app.set_busy(False)
+            self.app.contacts_changed()
+            messagebox.showerror("İptal tamamlanamadı", message)
+
+        self.app.run_background(lambda: server_plan.cancel_reminder_plan(self.db, self.app.gmail),
+                                on_done=done, on_error=failed)
 
     def _on_send_button(self):
         if self.app.is_scheduled("reminder"):
@@ -311,7 +396,7 @@ class FollowupTab(ctk.CTkFrame):
             return False
 
         per_mail = 1 + len(cc)
-        can_send = max(0, limit - self.db.recipients_last_24h()) // per_mail
+        can_send = quota.gmail_room(self.db, limit) // per_mail
         planned = interactive and self.app.send_tab.schedule_check.get() == 1
         if can_send == 0 and not planned:
             self._report("Günlük limit dolu", "Günlük alıcı limiti dolu, daha sonra tekrar deneyin.", interactive)

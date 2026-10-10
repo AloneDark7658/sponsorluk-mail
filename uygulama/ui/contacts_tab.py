@@ -22,8 +22,8 @@ WAITING = "Cevapsız"
 # Satır rengi: önce cevap durumu, yoksa gönderim durumu
 ROW_COLORS = {PENDING: "#333333", SENT: "#1e8e3e", ERROR: "#c5221f", SERVER: "#7b3fb5",
               "replied": "#1a56c4", "bounced": "#b05a00"}
-SERVER_BLOCK = ("Seçtiklerinizin arasında Google'da planlı firmalar var. Bunlar Google sunucusundan gidecek.\n"
-                "Değiştirmek için önce Gönderim sekmesinden 'Google planını iptal et'e basın.")
+SERVER_BLOCK = ("Seçtiklerinizin arasında Google'da planlı mail ya da hatırlatma olan firmalar var.\n"
+                "Değiştirmek için önce 'Google planını iptal et'e basın (Gönderim ya da Cevaplar sekmesinde).")
 COLUMNS = [
     ("no", "#", 40, "center"),
     ("firma", "Firma", 180, "w"),
@@ -46,6 +46,11 @@ def reply_text(c):
         return ""
     reminders = c.get("reminder_count") or 0
     suffix = f"  •  {reminders} hatırlatma" if reminders else ""
+    if c.get("reminder_draft_id"):
+        try:
+            suffix += "  •  ⏰ hatırlatma " + describe(datetime.strptime(c["reminder_scheduled_for"], TIME_FORMAT))
+        except (TypeError, ValueError):
+            suffix += "  •  ⏰ hatırlatma planlı"
     if c.get("manual_reply"):
         return "✓ Cevap alındı (elle)" + suffix
     status = c.get("reply_status")
@@ -416,7 +421,8 @@ class ContactsTab(ctk.CTkFrame):
     # ---------- Liste işlemleri ----------
 
     def _has_server_planned(self, ids):
-        return any(c and c["status"] == SERVER for c in (self.db.get_contact(i) for i in ids))
+        return any(c and (c["status"] == SERVER or c.get("reminder_draft_id"))
+                   for c in (self.db.get_contact(i) for i in ids))
 
     def retry_errors(self):
         count = self.db.counts()[ERROR]
@@ -464,7 +470,7 @@ class ContactsTab(ctk.CTkFrame):
         total = self.db.counts()["total"]
         if not total:
             return
-        if self.db.counts()[SERVER]:
+        if self.db.counts()[SERVER] or self.db.reminder_planned_contacts():
             messagebox.showwarning("Google'da planlı", SERVER_BLOCK)
             return
         if messagebox.askyesno(

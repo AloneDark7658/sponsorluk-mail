@@ -250,17 +250,21 @@ class GmailClient:
     # ---------- Taslaklar (Google sunucusuyla planlı gönderim) ----------
 
     def create_draft(self, to, subject, body, cc=None, attachments=None, sender_name="", signature=None,
-                     extra_headers=None):
-        """Gmail'de taslak oluşturur. {'draft_id', 'message_id', 'thread_id'} döner."""
-        raw = self.build_message(to, subject, body, cc, attachments, sender_name, None, signature,
+                     extra_headers=None, thread_id=None, in_reply_to=None):
+        """Gmail'de taslak oluşturur (thread_id verilirse o konuşmanın içinde). {'draft_id', 'message_id',
+        'thread_id'} döner."""
+        raw = self.build_message(to, subject, body, cc, attachments, sender_name, in_reply_to, signature,
                                  extra_headers).as_bytes()
 
         def make_request(users):
             if len(raw) <= RAW_SIZE_LIMIT:
-                return users.drafts().create(
-                    userId="me", body={"message": {"raw": base64.urlsafe_b64encode(raw).decode("ascii")}})
+                message = {"raw": base64.urlsafe_b64encode(raw).decode("ascii")}
+                if thread_id:
+                    message["threadId"] = thread_id
+                return users.drafts().create(userId="me", body={"message": message})
             media = MediaIoBaseUpload(io.BytesIO(raw), mimetype="message/rfc822", resumable=True)
-            return users.drafts().create(userId="me", body={}, media_body=media)
+            return users.drafts().create(userId="me", body={"message": {"threadId": thread_id}} if thread_id else {},
+                                         media_body=media)
 
         draft = self._execute(make_request)
         message = draft.get("message", {})

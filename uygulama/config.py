@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "Sponsorluk Mail Gönderici"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 # Güncellemelerin kontrol edildiği GitHub deposu (sürümler: https://github.com/<depo>/releases)
 GITHUB_REPO = "AloneDark7658/sponsorluk-mail"
 

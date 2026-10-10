@@ -3,6 +3,7 @@ import logging
 import threading
 from dataclasses import dataclass, field
 
+import quota
 from database import PENDING, REPLY_BOUNCED, REPLY_YES
 from gmail_client import GmailError
 from replies import awaiting_reply, refresh_contact
@@ -68,10 +69,11 @@ class _BatchWorker(threading.Thread):
 
     def limit_message(self):
         """Bir mail daha limiti aşacaksa sebep metni, aşmayacaksa None."""
-        used = self.db.recipients_last_24h()
-        if used + self.per_mail > self.job.daily_limit:
+        used, reserved = quota.gmail_used(self.db)
+        if used + reserved + self.per_mail > self.job.daily_limit:
+            extra = f" + Google'da planlı {reserved}" if reserved else ""
             return (
-                f"Günlük limite ulaşıldı (son 24 saatte {used} / {self.job.daily_limit} alıcı).\n"
+                f"Günlük limite ulaşıldı (son 24 saatte {used}{extra} / {self.job.daily_limit} alıcı).\n"
                 "Kalanlar bekliyor; daha sonra tekrar başlatınca kaldığı yerden devam eder."
             )
         return None
@@ -177,7 +179,8 @@ class ReminderWorker(_BatchWorker):
                 stop_reason = USER_STOPPED
                 break
             contact = self.db.get_contact(contact_id)
-            if not contact or not awaiting_reply(contact) or not contact.get("thread_id"):
+            if (not contact or not awaiting_reply(contact) or not contact.get("thread_id")
+                    or contact.get("reminder_draft_id")):
                 skipped += 1
                 self.notify({"type": "skipped", "index": index, "total": total})
                 continue

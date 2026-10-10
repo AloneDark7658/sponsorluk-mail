@@ -7,8 +7,10 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
+import quota
 import server_plan
 from database import display_time
+from replies import due_for_reminder
 from schedule import describe, format_times, next_slot
 
 log = logging.getLogger(__name__)
@@ -72,7 +74,12 @@ class ServerSetupDialog(ctk.CTkToplevel):
 
     def _update_status(self):
         verified = self.db.get_setting("server_verified")
-        if verified:
+        if server_plan.script_needs_update(self.db):
+            self.status.configure(
+                text="⚠ Google'daki kod eski sürüm. 'Kodu kopyala'ya basın, script.google.com'daki projenizde eski kodu "
+                     "tamamen silip yenisini yapıştırın ve kaydedin (Ctrl+S). 'kurulum'u tekrar çalıştırmanıza gerek yok.",
+                text_color="#b05a00")
+        elif verified:
             self.status.configure(text=f"✓ Google sunucusu çalışıyor (test: {display_time(verified)}).",
                                   text_color="#1e8e3e")
         elif self.db.get_setting("server_test_thread"):
@@ -88,6 +95,7 @@ class ServerSetupDialog(ctk.CTkToplevel):
         self.clipboard_clear()
         self.clipboard_append(server_plan.SCRIPT_CODE)
         self.copy_button.configure(text="Kopyalandı ✓")
+        self.db.set_setting("server_script_version", server_plan.SCRIPT_VERSION)
 
     def send_test(self):
         if not self.app.gmail.connected:
@@ -116,25 +124,36 @@ class ServerSetupDialog(ctk.CTkToplevel):
 
 
 class ServerPlanDialog(ctk.CTkToplevel):
-    """Bekleyen firmaların Google'ın günlük sınırına sığan kısmını taslak olarak planlar."""
+    """İlk mailleri (kind='campaign') ya da hatırlatmaları (kind='reminder') Google sunucusuyla planlar.
 
-    def __init__(self, master, app, mail, cc, signature):
+    Kapasite ortak bütçeden gelir: Google'ın o günkü 100 alıcısı (ilk mail + hatırlatma birlikte) ve
+    Gmail genel günlük limiti (gönderilenler + Google'da planlı olanlar) aşılmaz.
+    """
+
+    def __init__(self, master, app, cc, signature, kind="campaign", mail=None, reminder_body=None):
         super().__init__(master)
         self.app = app
         self.db = app.db
+        self.kind = kind
         self.mail, self.cc, self.signature = mail, cc, signature
+        self.reminder_body = reminder_body
         _, self.times, self.skip_weekends = app.send_tab.schedule_settings()
-        self.pending = self.db.pending_contacts()
+        _, self.daily_limit = app.send_tab._read_settings()
         self.per_mail = 1 + len(cc)
+        what = "hatırlatmaları" if kind == "reminder" else "mailleri"
 
         self.title("Google'da planla")
         self.resizable(False, False)
         self.transient(master.winfo_toplevel())
-        ctk.CTkLabel(self, text="Google sunucusuyla planla", font=ctk.CTkFont(size=17, weight="bold")).pack(
+        ctk.CTkLabel(self, text="Hatırlatmayı Google sunucusuyla planla" if kind == "reminder"
+                     else "Google sunucusuyla planla", font=ctk.CTkFont(size=17, weight="bold")).pack(
             anchor="w", padx=20, pady=(16, 2))
-        ctk.CTkLabel(self, text="Mailler Gmail'inize taslak olarak konur ve seçtiğiniz saatte Google'ın sunucusundan "
-                                "gider. Bilgisayarınızın açık olması gerekmez.",
-                     text_color="gray35", wraplength=560, justify="left").pack(anchor="w", padx=20)
+        info = (f"{what.capitalize()} Gmail'inize taslak olarak konur ve seçtiğiniz saatte Google'ın sunucusundan "
+                "gider. Bilgisayarınızın açık olması gerekmez.")
+        if kind == "reminder":
+            info += (" Google, göndermeden hemen önce konuşmaya bakar; firma bu arada cevap verdiyse "
+                     "hatırlatmayı göndermez.")
+        ctk.CTkLabel(self, text=info, text_color="gray35", wraplength=560, justify="left").pack(anchor="w", padx=20)
 
         ctk.CTkLabel(self, text="Gönderim saati:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=20, pady=(14, 4))
         choices = [t.strftime("%H:%M") for t in self.times] + ([SPLIT] if len(self.times) >= 2 else [])
@@ -144,10 +163,16 @@ class ServerPlanDialog(ctk.CTkToplevel):
 
         self.summary = ctk.CTkLabel(self, text="", justify="left", anchor="w", wraplength=560)
         self.summary.pack(fill="x", padx=20, pady=12)
+        warning = ""
         if not self.db.get_setting("server_verified"):
-            ctk.CTkLabel(self, text="⚠ Google sunucusu kurulumu henüz test edilmedi. Kurulum yapılmazsa mailler "
-                                    "taslakta bekler, gönderilmez.",
-                         text_color="#c5221f", wraplength=560, justify="left").pack(anchor="w", padx=20)
+            warning = ("⚠ Google sunucusu kurulumu henüz test edilmedi. Kurulum yapılmazsa mailler taslakta bekler, "
+                       "gönderilmez.")
+        elif kind == "reminder" and server_plan.script_needs_update(self.db):
+            warning = ("⚠ Google'daki kodunuz eski sürüm ve hatırlatmaları göndermez. Gönderim sekmesi → Kurulum → "
+                       "'Kodu kopyala' ile yeni kodu script.google.com'daki eski kodun yerine yapıştırıp kaydedin.")
+        if warning:
+            ctk.CTkLabel(self, text=warning, text_color="#c5221f", wraplength=560, justify="left").pack(
+                anchor="w", padx=20)
 
         self.progress = ctk.CTkLabel(self, text="", text_color="gray35")
         self.progress.pack(anchor="w", padx=20)
@@ -161,42 +186,65 @@ class ServerPlanDialog(ctk.CTkToplevel):
         self._refresh()
         self.after(150, lambda: _bring_to_front(self))
 
-    def _plan_items(self):
-        """[(firma, zaman)] - Google'ın günlük 100 alıcı sınırına sığacak kadar."""
+    def _slots(self):
         now = datetime.now()
-        choice = self.choice.get()
-        if choice == SPLIT:
+        if self.choice.get() == SPLIT:
             first = next_slot(now, self.times[:1], self.skip_weekends)
-            slots = [first, datetime.combine(first.date(), self.times[1])]
-        else:
-            chosen = next(t for t in self.times if t.strftime("%H:%M") == choice)
-            slots = [next_slot(now, [chosen], self.skip_weekends)]
-        room = max(0, server_plan.SERVER_DAILY_RECIPIENTS - server_plan.planned_recipients_on(self.db, slots[0].date()))
-        count = min(len(self.pending), room // self.per_mail)
-        selected = self.pending[:count]
+            return [first, datetime.combine(first.date(), self.times[1])]
+        chosen = next(t for t in self.times if t.strftime("%H:%M") == self.choice.get())
+        return [next_slot(now, [chosen], self.skip_weekends)]
+
+    def _candidates(self, slot):
+        if self.kind == "reminder":
+            # O saat geldiğinde hatırlatma zamanı gelmiş olacak firmalar (akşamdan sabaha planlanabilsin)
+            days, max_reminders = self.app.followup_tab._read_settings()
+            return due_for_reminder(self.db.list_contacts(), days, max_reminders, now=slot)
+        return self.db.pending_contacts()
+
+    def _plan_items(self):
+        """[(firma, zaman)] - ortak bütçeye sığacak kadar."""
+        slots = self._slots()
+        candidates = self._candidates(slots[0])
+        room = quota.server_room(self.db, slots[0].date(), self.daily_limit)
+        count = min(len(candidates), room // self.per_mail)
+        selected = candidates[:count]
         if len(slots) == 1:
-            return [(c, slots[0]) for c in selected], slots
+            return [(c, slots[0]) for c in selected], slots, len(candidates)
         half = math.ceil(count / 2)
-        return [(c, slots[0]) for c in selected[:half]] + [(c, slots[1]) for c in selected[half:]], slots
+        return ([(c, slots[0]) for c in selected[:half]] + [(c, slots[1]) for c in selected[half:]],
+                slots, len(candidates))
 
     def _refresh(self):
-        items, slots = self._plan_items()
+        items, slots, total = self._plan_items()
         groups = [sum(1 for _, when in items if when == slot) for slot in slots]
-        lines = [f"Şablon: {self.app.template_tab.template_label()}   •   Konu: {self.mail['subject']}"]
+        day = slots[0].date()
+        lines = []
+        if self.kind == "campaign":
+            lines.append(f"Şablon: {self.app.template_tab.template_label()}   •   Konu: {self.mail['subject']}")
         if items:
             parts = [f"{n} firma {describe(slot)}" for n, slot in zip(groups, slots) if n]
-            lines.append(f"Google'a verilecek: {len(items)} firma  →  " + ", ".join(parts))
+            label = "Hatırlatma gidecek" if self.kind == "reminder" else "Google'a verilecek"
+            lines.append(f"{label}: {len(items)} firma  →  " + ", ".join(parts))
+        elif total == 0:
+            lines.append("O saatte hatırlatma zamanı gelmiş firma yok." if self.kind == "reminder"
+                         else "Bekleyen firma yok.")
         else:
-            lines.append("Google'ın o günkü 100 alıcılık sınırı dolu ya da bekleyen firma yok.")
-        lines.append(f"Google sınırı: günde 100 alıcı (CC dahil; 1 firma = {self.per_mail} alıcı).")
-        rest = len(self.pending) - len(items)
+            lines.append("O günün gönderim bütçesi dolu.")
+        used, reserved = quota.gmail_used(self.db)
+        lines.append(f"Google sunucusu ({describe(slots[0]).split()[0]}): {quota.server_used_on(self.db, day)} / "
+                     f"{quota.SERVER_DAILY_RECIPIENTS} alıcı dolu.   Gmail günlük limiti: {used} gönderildi + "
+                     f"{reserved} planlı / {self.daily_limit}.   (1 firma = {self.per_mail} alıcı, CC dahil)")
+        rest = total - len(items)
         if rest:
-            lines.append(f"Kalan {rest} firma 'Bekliyor'da kalır; onları uygulamadan siz gönderirsiniz.")
+            lines.append(f"Sığmayan {rest} firma: " + ("bir sonraki gün planlayabilir ya da uygulamadan gönderebilirsiniz."
+                                                     if self.kind == "reminder" else
+                                                     "'Bekliyor'da kalır; onları uygulamadan siz gönderirsiniz."))
         self.summary.configure(text="\n".join(lines))
-        self.ok_button.configure(state="normal" if items else "disabled")
+        blocked = self.kind == "reminder" and server_plan.script_needs_update(self.db)
+        self.ok_button.configure(state="normal" if items and not blocked else "disabled")
 
     def confirm(self):
-        items, _ = self._plan_items()
+        items, _, _ = self._plan_items()
         if not items:
             return
         self.ok_button.configure(state="disabled")
@@ -212,6 +260,10 @@ class ServerPlanDialog(ctk.CTkToplevel):
                 text=f"Taslaklar hazırlanıyor: {done} / {total}"))
 
         def work():
+            if self.kind == "reminder":
+                return server_plan.create_reminder_plan(self.db, self.app.gmail, items, self.reminder_body, self.cc,
+                                                        self.signature, sender_name, format_times(times), skip,
+                                                        self.app.gmail.email, progress)
             return server_plan.create_plan(self.db, self.app.gmail, items, self.mail, self.cc, self.signature,
                                            sender_name, format_times(times), skip, progress, template_name)
 
@@ -219,13 +271,14 @@ class ServerPlanDialog(ctk.CTkToplevel):
             planned, skipped = result
             self.app.set_busy(False)
             self.app.contacts_changed()
-            send_tab.log(f"Google sunucusuyla planlandı: {planned} firma"
-                         + (f" ({skipped} firma eksik alan yüzünden 'Hata')" if skipped else "") + ".")
+            what = "hatırlatma" if self.kind == "reminder" else "firma"
+            note = (f" ({skipped} firma eksik alan yüzünden atlandı)" if skipped else "")
+            log_target = self.app.followup_tab if self.kind == "reminder" else send_tab
+            log_target.log(f"Google sunucusuyla planlandı: {planned} {what}{note}.")
             if self.winfo_exists():
                 self.destroy()
             messagebox.showinfo("Google'da planlandı",
-                                f"{planned} firma Google sunucusuna verildi. Bilgisayarınızı kapatabilirsiniz."
-                                + (f"\n{skipped} firma eksik alan yüzünden 'Hata' olarak işaretlendi." if skipped else ""))
+                                f"{planned} {what} Google sunucusuna verildi. Bilgisayarınızı kapatabilirsiniz.{note}")
 
         def failed(message):
             self.app.set_busy(False)

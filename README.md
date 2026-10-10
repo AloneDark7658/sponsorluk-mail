@@ -8,7 +8,7 @@ Kulübün sponsorluk maillerini kendi Gmail hesabınızdan, firmaya özel doldur
 - Birden fazla ek (PDF, Word, Excel, görsel...), şablon kaydetme, canlı önizleme, kendine test maili
 - Ayarlardan düzenlenen **imza** (isteğe bağlı logo ile) her maile otomatik eklenir
 - **Gönderim saatleri:** mailler yalnızca belirlenen saatlerde (varsayılan 09:30 ve 13:30) gider
-- **Google sunucusuyla planlama:** günde 100 alıcıya kadar olan kısım, bilgisayar kapalıyken de Google'ın sunucusundan gider
+- **Google sunucusuyla planlama:** ilk mailler ve hatırlatmalar, bilgisayar kapalıyken de Google'ın sunucusundan gider (günde 100 alıcıya kadar)
 - Kimin gönderildiği / hata aldığı kaydedilir; uygulama kapansa bile **kaldığı yerden devam eder**
 - Günlük limit (CC dahil) ve mailler arası bekleme ile Gmail'e takılmadan gönderir
 - **Cevap takibi:** hangi firmanın cevap verdiğini otomatik bulur, konuşmayı tek tıkla Gmail'de açar
@@ -96,7 +96,15 @@ Gmail'in kendi "gönderme zamanını planla" özelliği dışarıdan (API ile) k
 - Kod sadece uygulamanın işaretlediği taslaklara dokunur; sizin kendi taslaklarınıza dokunmaz. Planlı taslakları Gmail'deki **Taslaklar** klasöründe görebilirsiniz; **silmeyin**, silerseniz o firma gitmez.
 - Uygulamayı açtığınızda Google'ın gönderdikleri otomatik olarak "Gönderildi" yapılır, cevap takibi normal çalışır.
 - Vazgeçmek için **Google planını iptal et**: taslaklar silinir, firmalar "Bekliyor"a döner. Google'da planlı bir firma, plan iptal edilmeden düzenlenemez ya da "Bekliyor" yapılamaz (iki kez gitmesin diye).
-- Not: Google'ın 100 alıcı sınırı ile Gmail'in genel ~500 alıcı sınırı aynı hesapta birlikte geçerlidir.
+- **Hatırlatmalar da Google'da planlanabilir:** Cevaplar sekmesinde **Google'da planla**. Seçtiğiniz saatte hatırlatma zamanı gelmiş olacak firmalar için (akşamdan sabaha planlayabilirsiniz) hatırlatmalar ilk mailin konuşmasına taslak olarak konur. Google göndermeden hemen önce konuşmaya bakar: firma bu arada cevap verdiyse ya da mail ulaşmadıysa hatırlatmayı göndermez ve siler. "Ofis dışında" otomatik yanıtları ve CC'deki ekip adreslerinin yazdıklarını cevap saymaz.
+- **Kod güncellemesi (v1.6):** Hatırlatmaların Google'dan gitmesi için Google'daki kodun yeni sürümü gerekir. Uygulama eski kodu fark edince uyarır: Gönderim sekmesi → **Kurulum** → **Kodu kopyala** → script.google.com'daki projenizde eski kodu silip yenisini yapıştırın, kaydedin. Eski kod hatırlatma taslaklarına hiç dokunmaz, yani güncellemeden önce yanlışlıkla hatırlatma gitmez.
+
+**Ortak gönderim bütçesi**
+
+Tüm gönderim yolları aynı sınırları paylaşır, böylece hiçbir sınır aşılmaz:
+- **Gmail günlük limiti** (Gönderim → Ayarlar, varsayılan 200): son 24 saatte gönderilenler (uygulamadan ilk mail ve hatırlatma, Google sunucusunun gönderdikleri) **ve Google'da planlı bekleyenler** birlikte sayılır.
+- **Google sunucusu sınırı** (günde 100 alıcı): o gün Google'ın gönderdiği ve o güne planlı ilk mailler ile hatırlatmalar birlikte sayılır.
+- CC adresleri her mailde ayrı alıcı sayılır. Gönderim sekmesindeki **Durum** kartında güncel tablo görünür.
 
 **4) Cevaplar ve Hatırlatma**
 - Uygulama her açıldığında ve açıkken 15 dakikada bir, gönderdiğiniz maillere cevap gelip gelmediğine Gmail'den bakar. **Bilgisayarın sürekli açık olması gerekmez.** Cevaplar Gmail'de durduğu için, kapalıyken gelenler de bir sonraki açılışta bulunur.
@@ -105,7 +113,7 @@ Gmail'in kendi "gönderme zamanını planla" özelliği dışarıdan (API ile) k
 - Üstteki sarı bildirime tıklayınca yeni cevaplar ya da hatırlatma bekleyenler açılır.
 - CC'deki ekip adreslerinin (ör. YK grubu) konuşmaya yazdıkları cevap sayılmaz.
 - Firma telefonla ya da başka bir adresten döndüyse: **✎ Düzenle → "Cevap alındı olarak işaretle"**. İşaretli firmalara hatırlatma gitmez.
-- **Hatırlatma:** Ayarladığınız gün sayısı (varsayılan 7) geçmiş ve cevap vermemiş firmalara, ilk mailin cevabı olarak (aynı konuşmada, "Re: ..." konusuyla) hatırlatma gönderilir. Sabit CC eklenir; günlük limit ve bekleme süresi geçerlidir. Göndermeden hemen önce her firmanın cevabı tekrar kontrol edilir. Hatırlatmalar otomatik gitmez, siz butona basınca gider. Saat kısıtı açıksa onlar da planlanır ve gönderim saatinde (aynı saatte ilk mail de varsa onun hemen ardından) gider.
+- **Hatırlatma:** Ayarladığınız gün sayısı (varsayılan 7) geçmiş ve cevap vermemiş firmalara, ilk mailin cevabı olarak (aynı konuşmada, "Re: ..." konusuyla) hatırlatma gönderilir. Sabit CC eklenir; günlük limit ve bekleme süresi geçerlidir. Göndermeden hemen önce her firmanın cevabı tekrar kontrol edilir. Hatırlatmalar otomatik gitmez, siz butona basınca gider. Saat kısıtı açıksa onlar da planlanır ve gönderim saatinde (aynı saatte ilk mail de varsa onun hemen ardından) gider; bu yolda uygulama o saatte açık olmalı. Bilgisayar kapalıyken gitmesi için **Google'da planla**yı kullanın (yukarıya bakın).
 - Not: Firma ilk mailinizi yanıtlamak yerine **yeni bir mail** yazarsa otomatik algılanamayabilir. O durumda elle işaretleyin.
 
 **Hatalar:** Kısa Türkçe mesaj gösterilir. Teknik ayrıntı `veriler\uygulama.log` dosyasına yazılır, sorun olursa bu dosyayı yöneticiye gönderin.
@@ -194,6 +202,7 @@ sponsorluk-mail/
 | `sender.py` | Arka planda toplu gönderim ve hatırlatma (bekleme, limit, durdurma) |
 | `mail_format.py` | Ek dosya kontrolleri, HTML mail ve imza (kartvizit / düz metin) |
 | `schedule.py` | Gönderim saatleri ve planlı gönderim hesapları |
+| `quota.py` | Ortak gönderim bütçesi (Gmail limiti + Google sunucusu 100 alıcı) |
 | `server_plan.py` | Google sunucusuyla planlama: taslaklar, sunucu kodu (Apps Script), senkronizasyon |
 | `replies.py` | Cevap takibi: cevap / otomatik yanıt / ulaşmadı tespiti, hatırlatma zamanı |
 | `ui/` | Arayüz: ana pencere ve dört sekme |

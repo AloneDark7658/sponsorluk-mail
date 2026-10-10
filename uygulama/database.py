@@ -33,6 +33,12 @@ CONTACT_MIGRATIONS = {
     "scheduled_for": "TEXT",     # Google sunucusunun göndereceği zaman
     "recipients": "INTEGER",     # bu mail kaç alıcı sayılıyor (firma + CC)
     "sent_template": "TEXT",     # hangi şablonla gönderildi / planlandı
+    # Google sunucusuyla planlanan hatırlatma (ilk mailin konuşmasında taslak)
+    "reminder_draft_id": "TEXT",
+    "reminder_message_id": "TEXT",
+    "reminder_scheduled_for": "TEXT",
+    "reminder_planned_at": "TEXT",
+    "reminder_recipients": "INTEGER",
 }
 
 
@@ -238,7 +244,8 @@ class Database:
                 "UPDATE contacts SET status = ?, error = NULL, sent_at = NULL, message_id = NULL, "
                 "thread_id = NULL, sent_subject = NULL, rfc_message_id = NULL, reply_status = NULL, "
                 "reply_at = NULL, reply_from = NULL, reminder_count = 0, last_reminder_at = NULL, "
-                "manual_reply = 0, sent_template = NULL WHERE id = ?",
+                "manual_reply = 0, sent_template = NULL, reminder_draft_id = NULL, reminder_message_id = NULL, "
+                "reminder_scheduled_for = NULL, reminder_planned_at = NULL, reminder_recipients = NULL WHERE id = ?",
                 [(PENDING, cid) for cid in contact_ids],
             )
             self._conn.commit()
@@ -267,11 +274,31 @@ class Database:
     def set_rfc_message_id(self, contact_id, value):
         self._execute("UPDATE contacts SET rfc_message_id = ? WHERE id = ?", (value, contact_id))
 
-    def mark_reminded(self, contact_id):
+    def mark_reminded(self, contact_id, at=None):
         self._execute(
-            "UPDATE contacts SET reminder_count = reminder_count + 1, last_reminder_at = ? WHERE id = ?",
-            (now_str(), contact_id),
+            "UPDATE contacts SET reminder_count = reminder_count + 1, last_reminder_at = ?, reminder_draft_id = NULL, "
+            "reminder_message_id = NULL, reminder_scheduled_for = NULL, reminder_planned_at = NULL, "
+            "reminder_recipients = NULL WHERE id = ?",
+            (at or now_str(), contact_id),
         )
+
+    def mark_reminder_planned(self, contact_id, draft_id, message_id, scheduled_for, recipients):
+        self._execute(
+            "UPDATE contacts SET reminder_draft_id = ?, reminder_message_id = ?, reminder_scheduled_for = ?, "
+            "reminder_planned_at = ?, reminder_recipients = ? WHERE id = ?",
+            (draft_id, message_id, scheduled_for, now_str(), recipients, contact_id),
+        )
+
+    def clear_reminder_plan(self, contact_id):
+        self._execute(
+            "UPDATE contacts SET reminder_draft_id = NULL, reminder_message_id = NULL, reminder_scheduled_for = NULL, "
+            "reminder_planned_at = NULL, reminder_recipients = NULL WHERE id = ?",
+            (contact_id,),
+        )
+
+    def reminder_planned_contacts(self):
+        return [self._contact(r) for r in self._query(
+            "SELECT * FROM contacts WHERE reminder_draft_id IS NOT NULL ORDER BY id")]
 
     def retry_errors(self):
         cur = self._execute(
@@ -294,6 +321,15 @@ class Database:
             "INSERT INTO send_log (sent_at, recipients, to_email, kind) VALUES (?, ?, ?, ?)",
             (sent_at or now_str(), recipients, to_email, kind),
         )
+
+    def recipients_on(self, day, kinds):
+        """O takvim gününde, belirtilen türlerde gönderilen toplam alıcı (ör. Google sunucusunun gönderdikleri)."""
+        marks = ",".join("?" for _ in kinds)
+        rows = self._query(
+            f"SELECT COALESCE(SUM(recipients), 0) FROM send_log WHERE substr(sent_at, 1, 10) = ? AND kind IN ({marks})",
+            (day.strftime("%Y-%m-%d"), *kinds),
+        )
+        return rows[0][0]
 
     def recipients_last_24h(self):
         """Gmail'in limiti kayan 24 saatlik pencerede sayılır; biz de öyle sayıyoruz."""
