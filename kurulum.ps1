@@ -100,9 +100,9 @@
 
         Step "Gerekli paketler kuruluyor (ilk kurulumda birkac dakika surebilir)"
         $requirements = Join-Path $AppDir "requirements.txt"
-        & $python -m pip install -q --disable-pip-version-check -r $requirements
+        & $python -m pip install -q --disable-pip-version-check --no-warn-script-location -r $requirements
         if ($LASTEXITCODE -ne 0) {
-            & $python -m pip install -q --disable-pip-version-check --user -r $requirements
+            & $python -m pip install -q --disable-pip-version-check --no-warn-script-location --user -r $requirements
             if ($LASTEXITCODE -ne 0) { Fail "Paketler kurulamadi. Internet baglantinizi kontrol edip tekrar deneyin."; return }
         }
 
