@@ -34,7 +34,8 @@ DB_FILE = DATA_DIR / "veriler.db"
 LOG_FILE = DATA_DIR / "uygulama.log"
 
 DEFAULT_DELAY_SECONDS = 5
-DEFAULT_DAILY_LIMIT = 200
+DEFAULT_DAILY_LIMIT = 200  # tavsiye edilen
+MAX_DAILY_LIMIT = 500  # Gmail'in günlük alıcı sınırı; ayarda daha fazlası kabul edilmez
 # Gmail toplam ~25 MB'a izin veriyor; ekler gönderimde ~%33 büyüdüğü için ham boyut sınırı daha düşük.
 MAX_TOTAL_ATTACHMENT_MB = 18
 # Gmail'in güvenlik nedeniyle reddettiği dosya türleri

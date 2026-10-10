@@ -6,7 +6,7 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from config import DEFAULT_DAILY_LIMIT, DEFAULT_DELAY_SECONDS
+from config import DEFAULT_DAILY_LIMIT, DEFAULT_DELAY_SECONDS, MAX_DAILY_LIMIT
 from collections import Counter
 
 import quota
@@ -79,8 +79,17 @@ class SendTab(ctk.CTkFrame):
         ctk.CTkLabel(settings, text="Ayarlar", font=title_font).grid(row=0, column=0, sticky="w", padx=14, pady=(10, 4))
         self.delay_entry = self._setting_row(settings, 1, "Mailler arası bekleme (saniye)",
                                              self.db.get_setting("delay", DEFAULT_DELAY_SECONDS))
-        self.limit_entry = self._setting_row(settings, 2, "Günlük alıcı limiti (CC dahil)",
-                                             self.db.get_setting("daily_limit", DEFAULT_DAILY_LIMIT))
+        # Günlük limit: kutunun yanında tavsiye edilen değer ve üst sınır
+        ctk.CTkLabel(settings, text="Günlük alıcı limiti (CC dahil)").grid(row=2, column=0, sticky="w", padx=14, pady=3)
+        limit_cell = ctk.CTkFrame(settings, fg_color="transparent")
+        limit_cell.grid(row=2, column=1, sticky="ew", padx=(6, 14), pady=3)
+        self.limit_entry = ctk.CTkEntry(limit_cell, width=90)
+        self.limit_entry.pack(side="left")
+        self.limit_entry.insert(0, str(self.db.get_setting("daily_limit", DEFAULT_DAILY_LIMIT)))
+        self.limit_entry.bind("<FocusOut>", lambda e: self.save_settings(show_errors=False))
+        self.limit_entry.bind("<KeyRelease>", lambda e: self.refresh_summary())
+        ctk.CTkLabel(limit_cell, text=f"Tavsiye edilen: {DEFAULT_DAILY_LIMIT}  ·  en fazla {MAX_DAILY_LIMIT}",
+                     text_color="gray40").pack(side="left", padx=10)
         self.batch_entry = self._setting_row(settings, 3, "Bir seferde en fazla firma",
                                              self.db.get_setting("batch_max", ""), placeholder="Boş = sınırsız")
         self.sender_entry = self._setting_row(settings, 4, "Gönderen adı (isteğe bağlı)",
@@ -104,7 +113,7 @@ class SendTab(ctk.CTkFrame):
 
         ctk.CTkLabel(
             settings,
-            text="Google'ın sınırı günde ~500 alıcıdır; 200 güvenli bir değerdir. Planlı gönderimde saat geldiğinde "
+            text=f"Gmail'in sınırı günde ~{MAX_DAILY_LIMIT} alıcıdır; daha fazlası yazılamaz. {DEFAULT_DAILY_LIMIT} güvenli bir değerdir. Planlı gönderimde saat geldiğinde "
                  "uygulamanın açık olması gerekir (bilgisayar uykuya geçmez, ama dizüstünün kapağı kapatılırsa uyur).",
             text_color="gray40", wraplength=520, justify="left",
         ).grid(row=7, column=0, columnspan=2, sticky="w", padx=14, pady=(4, 10))
@@ -184,6 +193,9 @@ class SendTab(ctk.CTkFrame):
             raise ValueError("Bekleme süresi negatif olamaz.")
         if limit < 1:
             raise ValueError("Günlük limit en az 1 olmalı.")
+        if limit > MAX_DAILY_LIMIT:
+            raise ValueError(f"Günlük limit en fazla {MAX_DAILY_LIMIT} olabilir (Gmail'in sınırı). "
+                             f"Tavsiye edilen: {DEFAULT_DAILY_LIMIT}.")
         return delay, limit
 
     def _read_batch_max(self):
