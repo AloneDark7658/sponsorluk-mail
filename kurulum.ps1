@@ -28,10 +28,16 @@
     }
 
     function Test-Python($exe, $prefix) {
+        # Yol, kullanici adinda Turkce karakter (O, S, I...) olsa da bozulmasin diye UTF-8 baytlarinin
+        # onaltilik (hex) hali olarak alinir; Windows PowerShell konsol kodlamasindan etkilenmez.
         try {
-            $out = & $exe @prefix -c "import sys, tkinter; print(sys.version_info >= (3, 10)); print(sys.executable)" 2>$null
+            $out = & $exe @prefix -c "import sys, tkinter; print(sys.version_info >= (3, 10)); print(sys.executable.encode('utf-8').hex())" 2>$null
         } catch { return $null }
-        if ($LASTEXITCODE -eq 0 -and $out -and $out[0] -eq "True") { return $out[1] }
+        if ($LASTEXITCODE -ne 0 -or -not $out -or $out[0] -ne "True") { return $null }
+        $hex = "$($out[1])".Trim()
+        $bytes = [byte[]]@(for ($i = 0; $i -lt $hex.Length; $i += 2) { [Convert]::ToByte($hex.Substring($i, 2), 16) })
+        $path = [Text.Encoding]::UTF8.GetString($bytes)
+        if (Test-Path -LiteralPath $path) { return $path }
         return $null
     }
 
