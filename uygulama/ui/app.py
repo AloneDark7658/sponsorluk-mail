@@ -325,9 +325,8 @@ class App(ctk.CTk):
         """Saat kısıtı açıksa (saatler, hafta sonu atlansın mı); kapalı ya da hatalıysa None.
         İlk mailler 'Gönderim saatleri'ni, hatırlatmalar kendi 'Hatırlatma saatleri'ni kullanır."""
         try:
-            enabled, times, skip_weekends = self.send_tab.schedule_settings()
-            if kind == "reminder":
-                times = self.followup_tab.reminder_times()
+            tab = self.followup_tab if kind == "reminder" else self.send_tab
+            enabled, times, skip_weekends = tab.schedule_settings()
         except ValueError:
             return None
         return (times, skip_weekends) if enabled else None

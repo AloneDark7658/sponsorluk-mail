@@ -91,7 +91,7 @@ class SendTab(ctk.CTkFrame):
 
         options = ctk.CTkFrame(settings, fg_color="transparent")
         options.grid(row=6, column=0, columnspan=2, sticky="w", padx=14, pady=(4, 2))
-        self.schedule_check = ctk.CTkCheckBox(options, text="Sadece bu saatlerde gönder", command=self._on_schedule_option)
+        self.schedule_check = ctk.CTkCheckBox(options, text="Belirtilen saatlerde gönder", command=self._on_schedule_option)
         if self.db.get_setting("schedule_enabled", "1") == "1":
             self.schedule_check.select()
         self.schedule_check.pack(side="left")
@@ -223,8 +223,7 @@ class SendTab(ctk.CTkFrame):
         self.db.set_setting("schedule_enabled", "1" if self.schedule_check.get() == 1 else "0")
         self.db.set_setting("skip_weekends", "1" if self.weekend_check.get() == 1 else "0")
         if self.schedule_check.get() != 1:
-            for kind in ("campaign", "reminder"):
-                self.app.set_scheduled(kind, False)
+            self.app.set_scheduled("campaign", False)
         self.app.refresh_schedule()
 
     # ---------- Özet ----------

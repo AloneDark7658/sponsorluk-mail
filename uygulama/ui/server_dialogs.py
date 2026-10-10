@@ -139,9 +139,8 @@ class ServerPlanDialog(ctk.CTkToplevel):
         self.mail, self.cc, self.signature = mail, cc, signature
         self.reminder_body = reminder_body
         self.excluded_ids = excluded_ids or set()  # hatırlatma listesinde işareti kaldırılan firmalar
-        _, self.times, self.skip_weekends = app.send_tab.schedule_settings()
-        if kind == "reminder":
-            self.times = app.followup_tab.reminder_times()
+        tab = app.followup_tab if kind == "reminder" else app.send_tab
+        _, self.times, self.skip_weekends = tab.schedule_settings()
         _, self.daily_limit = app.send_tab._read_settings()
         self.per_mail = 1 + len(cc)
         what = "hatırlatmaları" if kind == "reminder" else "mailleri"
@@ -256,8 +255,7 @@ class ServerPlanDialog(ctk.CTkToplevel):
         self.choice.configure(state="disabled")
         send_tab = self.app.send_tab
         sender_name = send_tab.sender_entry.get().strip()
-        _, _, skip = send_tab.schedule_settings()
-        times = self.times
+        times, skip = self.times, self.skip_weekends
         template_name = self.app.template_tab.template_label()
         self.app.set_busy(True)
 

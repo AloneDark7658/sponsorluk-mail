@@ -92,14 +92,25 @@ class FollowupTab(ctk.CTkFrame):
                                            self.db.get_setting("reminder_max", DEFAULT_MAX))
         self.times_entry = self._setting_row(settings, 3, "Hatırlatma saatleri",
                                              self.db.get_setting("reminder_times", DEFAULT_REMINDER_TIMES), width=140)
+        options = ctk.CTkFrame(settings, fg_color="transparent")
+        options.grid(row=4, column=0, columnspan=2, sticky="w", padx=14, pady=(4, 2))
+        self.schedule_check = ctk.CTkCheckBox(options, text="Belirtilen saatlerde gönder",
+                                              command=self._on_schedule_option)
+        if self.db.get_setting("reminder_schedule_enabled", "1") == "1":
+            self.schedule_check.select()
+        self.schedule_check.pack(side="left")
+        self.weekend_check = ctk.CTkCheckBox(options, text="Hafta sonu gönderme", command=self._on_schedule_option)
+        if self.db.get_setting("reminder_skip_weekends", "1") == "1":
+            self.weekend_check.select()
+        self.weekend_check.pack(side="left", padx=16)
         ctk.CTkLabel(
             settings,
             text="Hatırlatma, ilk mailin cevabı olarak aynı konuşmada ('Re: ...' konusuyla) gider ve sabit CC "
-                 "listesi eklenir. Hatırlatmalar yukarıdaki saatlerde gider (ilk maillerin saatlerinden ayrı). "
-                 "Bekleme süresi, günlük limit ve hafta sonu ayarı 'Gönderim' sekmesindekilerdir. "
+                 "listesi eklenir. Saat ve hafta sonu ayarları ilk maillerinkinden ayrıdır. "
+                 "Bekleme süresi ve günlük limit 'Gönderim' sekmesindeki ayarlardır. "
                  "Göndermeden hemen önce her firmanın cevabı tekrar kontrol edilir.",
             text_color="gray40", wraplength=520, justify="left",
-        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=14, pady=(4, 12))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=14, pady=(4, 12))
 
         # --- Hatırlatma metni ve önizleme ---
         editor = ctk.CTkFrame(self)
@@ -189,6 +200,17 @@ class FollowupTab(ctk.CTkFrame):
     def reminder_times(self):
         """Hatırlatma saatleri (ilk maillerin saatlerinden ayrı). Hatalıysa ValueError."""
         return parse_times(self.times_entry.get())
+
+    def schedule_settings(self):
+        """(saatlere bağlı mı, saatler, hafta sonu atlansın mı) — hatırlatmalara özel. Saatler hatalıysa ValueError."""
+        return self.schedule_check.get() == 1, self.reminder_times(), self.weekend_check.get() == 1
+
+    def _on_schedule_option(self):
+        self.db.set_setting("reminder_schedule_enabled", "1" if self.schedule_check.get() == 1 else "0")
+        self.db.set_setting("reminder_skip_weekends", "1" if self.weekend_check.get() == 1 else "0")
+        if self.schedule_check.get() != 1:
+            self.app.set_scheduled("reminder", False)
+        self.app.refresh_schedule()
 
     def _body(self):
         return self.body_text.get("1.0", "end-1c").rstrip()
@@ -389,7 +411,7 @@ class FollowupTab(ctk.CTkFrame):
             self.send_button.configure(state="normal", text="Hatırlatma planını iptal et",
                                        fg_color=ORANGE, hover_color=ORANGE_HOVER)
         else:
-            verb = "planla" if self.app.send_tab.schedule_check.get() == 1 else "gönder"
+            verb = "planla" if self.schedule_check.get() == 1 else "gönder"
             self.send_button.configure(
                 state="disabled" if (self.app.busy or not due_count) else "normal",
                 text=f"Hatırlatmayı {verb} ({due_count} firma)" if due_count else f"Hatırlatmayı {verb}",
@@ -413,7 +435,7 @@ class FollowupTab(ctk.CTkFrame):
         try:
             self._read_settings()
             self.app.send_tab._read_settings()
-            self.app.send_tab.schedule_settings()
+            self.schedule_settings()
         except ValueError as exc:
             messagebox.showerror("Ayar hatası", str(exc))
             return
@@ -511,7 +533,7 @@ class FollowupTab(ctk.CTkFrame):
 
         per_mail = 1 + len(cc)
         can_send = quota.gmail_room(self.db, limit) // per_mail
-        planned = interactive and self.app.send_tab.schedule_check.get() == 1
+        planned = interactive and self.schedule_check.get() == 1
         if can_send == 0 and not planned:
             self._report("Günlük limit dolu", "Günlük alıcı limiti dolu, daha sonra tekrar deneyin.", interactive)
             return False
